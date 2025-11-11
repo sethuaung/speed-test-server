@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Speed Test Logger</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="keywords" content="FELIXENT:Projects">
+  <meta name="description" content="A serverless upload timing endpoint for measuring client-to-server performance. Compatible with Node.js 22.x and Vercel Functions.">
+  <meta name="author" content="Mosquito">
+  <link href="favicon.ico" rel="icon">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.3.0/dist/chart.umd.min.js"></script>
+  <style>
+    body { font-family: Inter, system-ui, sans-serif; background: #0f1724; color: #e6eef8; padding: 2rem; }
+    .card { max-width: 960px; margin: auto; background: #111827; padding: 2rem; border-radius: 1rem; box-shadow: 0 0 20px rgba(0,0,0,0.3); }
+    h1 { font-size: 1.5rem; margin-bottom: 1rem; color: #60a5fa; }
+    button { background: #06b6d4; color: #04263a; border: none; padding: 0.5rem 0.9rem; border-radius: 0.5rem; cursor: pointer; font-weight: bold; margin-right: 0.5rem; }
+    canvas { margin-top: 1rem; background: #0b1220; border-radius: 0.5rem; width:100%; }
+    .metrics { display: flex; gap: 1rem; margin-top: 1rem; flex-wrap: wrap; }
+    .metric { flex: 1 1 120px; background: #0b1220; padding: 0.75rem; border-radius: 0.5rem; text-align: center; }
+    .metric .label { font-size: 0.80rem; color: #94a3b8; }
+    .metric .value { font-size: 1.1rem; font-weight: bold; margin-top: 0.25rem; }
+    pre { background: #0b1220; padding: 1rem; border-radius: 0.5rem; font-size: 0.9rem; overflow-x: auto; margin-top: 1rem; white-space: pre-wrap; word-break: break-word; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Speed Test Logger</h1>
+    <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+      <button id="multiRegionBtn">Run Multi-Region Test</button>
+      <button id="exportBtn">Export JSON</button>
+      <label style="display:flex;align-items:center;gap:0.5rem;margin-left:auto;">
+        <span style="color:#94a3b8;font-size:0.9rem">API Key</span>
+        <input id="apiKey" type="password" placeholder="x-api-key" style="background:#081023;border:none;color:#e6eef8;padding:0.35rem 0.5rem;border-radius:0.35rem;">
+      </label>
+    </div>
+
+    <div id="regionInfo" style="margin-top:1rem;color:#94a3b8">Detecting region…</div>
+
+    <div class="metrics">
+      <div class="metric"><div class="label">US</div><div id="usVal" class="value">—</div></div>
+      <div class="metric"><div class="label">Europe</div><div id="euVal" class="value">—</div></div>
+      <div class="metric"><div class="label">Asia</div><div id="asiaVal" class="value">—</div></div>
+    </div>
+
+    <canvas id="chart" height="180"></canvas>
+    <pre id="output">No test run yet.</pre>
+  </div>
+
+      <footer class="mt-6 text-sm text-gray-500">
+        <p class="text-sm">For educational purposes. © 2025 <a href="https://felixent.vercel.app"> Felixent</a> All rights reserved.</p>
+      </footer>
+
+  <script>
+    // Config: test URLs (CORS required). Change or add regions as needed.
+    const TEST_URLS = {
+      US: 'https://speedtest.tele2.net/10MB.zip',
+      Europe: 'https://speed.hetzner.de/10MB.bin',
+      Asia: 'https://sgp-ping.vultr.com/10MB.bin'
+    };
+
+    const multiRegionBtn = document.getElementById('multiRegionBtn');
+    const exportBtn = document.getElementById('exportBtn');
+    const apiKeyInput = document.getElementById('apiKey');
+    const usVal = document.getElementById('usVal');
+    const euVal = document.getElementById('euVal');
+    const asiaVal = document.getElementById('asiaVal');
+    const output = document.getElementById('output');
+    const regionInfo = document.getElementById('regionInfo');
+
+    const chartCtx = document.getElementById('chart').getContext('2d');
+    const chart = new Chart(chartCtx, {
+      type: 'line',
+      data: {
+        labels: [],
+        datasets: [
+          { label: 'US', data: [], borderColor: '#60a5fa', backgroundColor: 'rgba(96,165,250,0.08)', tension: 0.3 },
+          { label: 'Europe', data: [], borderColor: '#34d399', backgroundColor: 'rgba(52,211,153,0.08)', tension: 0.3 },
+          { label: 'Asia', data: [], borderColor: '#f97316', backgroundColor: 'rgba(249,115,22,0.08)', tension: 0.3 }
+        ]
+      },
+      options: {
+        animation: false,
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          y: { beginAtZero: true },
+          x: { display: false }
+        },
+        plugins: {
+          legend: { labels: { color: '#cbd5e1' } }
+        }
+      }
+    });
+
+    const testResults = {
+      timestamp: null,
+      clientRegion: null,
+      tests: []
+    };
+
+    async function detectRegion() {
+      try {
+        const res = await fetch('https://ipapi.co/json/');
+        const data = await res.json();
+        const region = \`\${data.city}, \${data.region}, \${data.country_name}\`;
+        regionInfo.textContent = 'Detected Region: ' + region;
+        testResults.clientRegion = region;
+      } catch (err) {
+        regionInfo.textContent = 'Region detection failed';
+        testResults.clientRegion = null;
+      }
+    }
+
+    async function streamDownload(url, label, datasetIndex, displayEl) {
+      const start = performance.now();
+      let received = 0;
+      chart.data.datasets[datasetIndex].data = [];
+
+      try {
+        const res = await fetch(url, { cache: 'no-store' });
+        if (!res.ok || !res.body) throw new Error('Fetch failed or stream not available: ' + res.status);
+        const reader = res.body.getReader();
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          received += value.length;
+          const elapsed = (performance.now() - start) / 1000;
+          const bps = (received * 8) / Math.max(elapsed, 0.001);
+          chart.data.labels.push('');
+          chart.data.datasets[datasetIndex].data.push(bps);
+          chart.update('none');
+        }
+        const totalTime = (performance.now() - start) / 1000;
+        const totalBps = (received * 8) / Math.max(totalTime, 0.001);
+        displayEl.textContent = \`\${(totalBps / 1e6).toFixed(2)} Mbps\`;
+        testResults.tests.push({ region: label, url, bytes: received, seconds: totalTime, bps: totalBps, mbps: (totalBps / 1e6) });
+        return { ok: true, label, bytes: received, seconds: totalTime, mbps: (totalBps / 1e6) };
+      } catch (err) {
+        displayEl.textContent = 'Failed';
+        return { ok: false, label, error: err.message };
+      }
+    }
+
+    async function submitToBackend() {
+      const apiKey = apiKeyInput.value.trim();
+      if (!apiKey) {
+        output.textContent += '\\n⚠️ No API key provided. Skipping submit to /log.';
+        return;
+      }
+
+      try {
+        const res = await fetch('/log', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': apiKey
+          },
+          body: JSON.stringify(testResults)
+        });
+        if (!res.ok) {
+          const text = await res.text();
+          output.textContent += '\\n❌ Backend responded with status ' + res.status + ': ' + text;
+          return;
+        }
+        const json = await res.json();
+        output.textContent += '\\n✅ Results submitted to /log.';
+      } catch (err) {
+        output.textContent += '\\n❌ Submit failed: ' + err.message;
+      }
+    }
+
+    function exportResults() {
+      const blob = new Blob([JSON.stringify(testResults, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'speed-test-results.json';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }
+
+    multiRegionBtn.addEventListener('click', async () => {
+      output.textContent = 'Running multi-region test...';
+      chart.data.labels = [];
+      chart.data.datasets.forEach(ds => ds.data = []);
+      chart.update();
+      testResults.tests = [];
+      testResults.timestamp = new Date().toISOString();
+
+      // Run regions sequentially to avoid saturating the network and to provide clear chart overlays
+      const results = [];
+      results.push(await streamDownload(TEST_URLS.US, 'US', 0, usVal));
+      results.push(await streamDownload(TEST_URLS.Europe, 'Europe', 1, euVal));
+      results.push(await streamDownload(TEST_URLS.Asia, 'Asia', 2, asiaVal));
+
+      output.textContent = results.map(r => r.ok ? \`\${r.label}: \${r.mbps.toFixed(2)} Mbps\` : \`\${r.label} error: \${r.error}\`).join('\\n');
+
+      // Auto-submit if API key provided
+      await submitToBackend();
+    });
+
+    exportBtn.addEventListener('click', exportResults);
+
+    // Init
+    detectRegion();
+  </script>
+</body>
+</html>

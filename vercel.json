@@ -1,0 +1,13 @@
+{
+  "version": 2,
+  "functions": {
+    "api/log.js": {
+      "memory": 512,
+      "maxDuration": 10
+    }
+  },
+  "routes": [
+    { "src": "/log", "dest": "/api/log.js" },
+    { "src": "/", "dest": "/index.html" }
+  ]
+}

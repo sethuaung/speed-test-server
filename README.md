@@ -1,3 +1,26 @@
+# Speed-Test-Server
+
+- Containing the authenticated logging API and the multi-region speed-test frontend (auto-region detection, Chart.js, JSON export, and auto-submit with x-api-key).
+- The project uses Node 22.x for Vercel functions.
+
+---
+
+Full Vercel-ready repo combining:
+- A secured logging API at /log (API key or JWT)
+- A multi-region client-side speed-test UI served from /index.html
+
+Quick start:
+1. Copy .env.example values to Vercel Environment Variables (API_KEY, JWT_SECRET)
+2. Commit & push this repo to GitHub
+3. Import project in Vercel and deploy
+
+Frontend features:
+- Automatic region detection via ipapi.co
+- Multi-region streaming download tests (US, Europe, Asia)
+- Live Chart.js overlays
+- JSON export and automatic submit to /log using x-api-key
+
+
 **Here’s a multi-region download speed comparison chart** showing simulated results from three public test servers in the US, Europe, and Asia.
 
 ---
@@ -12,7 +35,7 @@ This chart compares download speeds (in Mbps) across five test iterations from:
 
 Each line represents a region’s performance over time:
 
-📊 Download Speed (Mbps) vs. Test Iteration  
+📊 Download Speed (Mbps) vs. Test Iteration
 🟦 US  🟩 Europe  🟥 Asia
 
 ⬇️ Click the image above to download or view it in full resolution.
@@ -32,3 +55,15 @@ Each line represents a region’s performance over time:
 Europe consistently outperforms the other regions in this simulation, while Asia shows slightly lower throughput—likely due to longer round-trip latency or peering differences.
 
 ---
+
+Backend features:
+- /log accepts POST JSON
+- Auth by x-api-key header or Bearer JWT (JWT_SECRET must be set)
+- Console logs received payload (replace with DB or storage in production)
+
+Notes:
+- Ensure test URLs used by the client are CORS-enabled
+- For larger scale logging add persistence (Postgres, S3, etc.) and proper rate-limiting
+
+---
+

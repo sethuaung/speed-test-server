@@ -1,0 +1,10 @@
+{
+  "name": "vercel-api-logger",
+  "version": "1.0.0",
+  "engines": {
+    "node": "22.x"
+  },
+  "dependencies": {
+    "jsonwebtoken": "^9.0.2"
+  }
+}
