@@ -1,0 +1,38 @@
+version: "3.8"
+services:
+  caddy:
+    image: caddy:2.7.4
+    container_name: caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - ACME_AGREE=true
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: speed-upload-server
+    restart: unless-stopped
+    environment:
+      - PORT=3000
+      - MAX_FILE_BYTES=${MAX_FILE_BYTES:-104857600}
+      - API_KEY=${API_KEY:-}
+    expose:
+      - "3000"
+    networks:
+      - internal
+
+volumes:
+  caddy_data:
+  caddy_config:
+
+networks:
+  internal:
+    driver: bridge
