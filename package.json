@@ -1,0 +1,10 @@
+{
+  "name": "speed-upload-server-vercel",
+  "version": "1.0.0",
+  "engines": {
+    "node": "22.x"
+  },
+  "dependencies": {
+    "formidable": "^3.7.0"
+  }
+}
