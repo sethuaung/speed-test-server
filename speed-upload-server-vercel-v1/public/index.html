@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="keywords" content="FELIXENT:Projects">
+  <meta name="description" content="A serverless upload timing endpoint for measuring client-to-server performance. Compatible with Node.js 22.x and Vercel Functions.">
+  <meta name="author" content="Mosquito">
+  <link href="favicon.ico" rel="icon">
+    <title>Speed Upload Test</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.3.0/dist/chart.umd.min.js"></script>
+    <style>
+      body {
+        font-family: Inter, system-ui, sans-serif;
+        background: #0f1724;
+        color: #e6eef8;
+        margin: 0;
+        padding: 2rem;
+      }
+      .card {
+        max-width: 720px;
+        margin: auto;
+        background: #111827;
+        padding: 2rem;
+        border-radius: 1rem;
+        box-shadow: 0 0 20px rgba(0,0,0,0.3);
+      }
+      h1 {
+        font-size: 1.5rem;
+        margin-bottom: 1rem;
+        color: #60a5fa;
+      }
+      input[type="file"] {
+        margin-bottom: 1rem;
+      }
+      button {
+        background: #06b6d4;
+        color: #04263a;
+        border: none;
+        padding: 0.6rem 1rem;
+        border-radius: 0.5rem;
+        cursor: pointer;
+        font-weight: bold;
+        margin-right: 0.5rem;
+      }
+      pre {
+        background: #0b1220;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        font-size: 0.9rem;
+        overflow-x: auto;
+        margin-top: 1rem;
+      }
+      canvas {
+        margin-top: 1rem;
+        background: #0b1220;
+        border-radius: 0.5rem;
+      }
+      .metrics {
+        display: flex;
+        gap: 2rem;
+        margin-top: 1rem;
+      }
+      .metric {
+        flex: 1;
+        background: #0b1220;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        text-align: center;
+      }
+      .metric .label {
+        font-size: 0.85rem;
+        color: #94a3b8;
+      }
+      .metric .value {
+        font-size: 1.2rem;
+        font-weight: bold;
+        margin-top: 0.5rem;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>Upload Timing Test</h1>
+      <input type="file" id="fileInput" />
+      <button id="uploadBtn">Upload</button>
+      <button id="latencyBtn">Test Latency</button>
+
+      <div class="metrics">
+        <div class="metric">
+          <div class="label">Latency</div>
+          <div id="latencyVal" class="value">—</div>
+        </div>
+        <div class="metric">
+          <div class="label">Upload Speed</div>
+          <div id="uploadVal" class="value">—</div>
+        </div>
+      </div>
+
+      <canvas id="chart" height="160"></canvas>
+      <pre id="output">No upload yet.</pre>
+    </div>
+
+    <footer class="mt-6 text-sm text-gray-500">
+      <p class="text-sm">For educational purposes. © 2025 <a href="https://felixent.vercel.app"> Felixent</a> All rights reserved.</p>
+    </footer>
+
+    <script>
+      const uploadBtn = document.getElementById('uploadBtn');
+      const latencyBtn = document.getElementById('latencyBtn');
+      const fileInput = document.getElementById('fileInput');
+      const output = document.getElementById('output');
+      const latencyVal = document.getElementById('latencyVal');
+      const uploadVal = document.getElementById('uploadVal');
+
+      const chartCtx = document.getElementById('chart').getContext('2d');
+      const chart = new Chart(chartCtx, {
+        type: 'line',
+        data: {
+          labels: [],
+          datasets: [{
+            label: 'Upload Speed (bps)',
+            data: [],
+            borderColor: '#60a5fa',
+            backgroundColor: 'rgba(96,165,250,0.1)',
+            tension: 0.3
+          }]
+        },
+        options: {
+          animation: false,
+          scales: {
+            y: { beginAtZero: true },
+            x: { display: false }
+          }
+        }
+      });
+
+      latencyBtn.addEventListener('click', async () => {
+        latencyVal.textContent = 'Testing...';
+        const start = performance.now();
+        try {
+          await fetch('/upload', { method: 'OPTIONS' });
+          const elapsed = Math.round(performance.now() - start);
+          latencyVal.textContent = `${elapsed} ms`;
+          output.textContent = `Latency test: ${elapsed} ms`;
+        } catch (err) {
+          latencyVal.textContent = 'Failed';
+          output.textContent = 'Latency test failed: ' + err.message;
+        }
+      });
+
+      uploadBtn.addEventListener('click', async () => {
+        const file = fileInput.files[0];
+        if (!file) {
+          output.textContent = 'Please select a file.';
+          return;
+        }
+
+        const form = new FormData();
+        form.append('file', file);
+        form.append('meta', JSON.stringify({ clientSentAt: Date.now() }));
+
+        output.textContent = 'Uploading...';
+        chart.data.labels = [];
+        chart.data.datasets[0].data = [];
+        chart.update();
+
+        const start = performance.now();
+        let uploaded = 0;
+
+        const reader = file.stream().getReader();
+        const chunks = [];
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          chunks.push(value);
+          uploaded += value.length;
+          const elapsed = (performance.now() - start) / 1000;
+          const bps = (uploaded * 8) / elapsed;
+          chart.data.labels.push('');
+          chart.data.datasets[0].data.push(bps);
+          chart.update();
+        }
+
+        const blob = new Blob(chunks);
+        const formUpload = new FormData();
+        formUpload.append('file', blob, file.name);
+        formUpload.append('meta', JSON.stringify({ clientSentAt: Date.now() }));
+
+        try {
+          const res = await fetch('/upload', {
+            method: 'POST',
+            body: formUpload
+          });
+          const json = await res.json();
+          const totalTime = (performance.now() - start) / 1000;
+          const totalBps = (blob.size * 8) / totalTime;
+          uploadVal.textContent = `${(totalBps / 1e6).toFixed(2)} Mbps`;
+          output.textContent = JSON.stringify(json, null, 2);
+        } catch (err) {
+          uploadVal.textContent = 'Failed';
+          output.textContent = 'Upload failed: ' + err.message;
+        }
+      });
+    </script>
+  </body>
+  </html>
